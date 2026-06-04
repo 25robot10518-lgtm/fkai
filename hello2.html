@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Pose Detection</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+
+<style>
+body{
+    text-align:center;
+    font-family:Arial;
+}
+
+#result{
+    margin-top:20px;
+    font-size:32px;
+    font-weight:bold;
+    color:green;
+}
+
+#status{
+    margin-top:10px;
+    color:#666;
+}
+
+#help{
+    width:700px;
+    margin:auto;
+    text-align:left;
+    background:#f4f4f4;
+    padding:10px;
+    border-radius:10px;
+}
+</style>
+
+</head>
+<body>
+
+<h2>Teachable Machine Pose Model</h2>
+
+<button onclick="init()">시작</button>
+
+<div id="help">
+<h3>도움말</h3>
+<ul>
+<li>웹캠 권한을 허용하세요.</li>
+<li>학습한 포즈를 카메라 중앙에 맞추세요.</li>
+<li>70% 이상 인식되면 결과가 표시됩니다.</li>
+<li>조명이 밝을수록 정확도가 높습니다.</li>
+</ul>
+</div>
+
+<br>
+
+<canvas id="canvas"></canvas>
+
+<div id="result">대기 중...</div>
+<div id="status"></div>
+
+<div id="label-container"></div>
+
+<script>
+
+const URL = "https://teachablemachine.withgoogle.com/models/4EtVlqMBg/";
+
+let model, webcam, ctx, labelContainer, maxPredictions;
+
+const THRESHOLD = 0.7; // 70%
+
+async function init() {
+
+    const modelURL = URL + "model.json";
+    const metadataURL = URL + "metadata.json";
+
+    model = await tmPose.load(modelURL, metadataURL);
+    maxPredictions = model.getTotalClasses();
+
+    const size = 700;
+    const flip = true;
+
+    webcam = new tmPose.Webcam(size, size, flip);
+
+    await webcam.setup();
+    await webcam.play();
+
+    window.requestAnimationFrame(loop);
+
+    const canvas = document.getElementById("canvas");
+    canvas.width = size;
+    canvas.height = size;
+
+    ctx = canvas.getContext("2d");
+
+    labelContainer = document.getElementById("label-container");
+
+    for(let i=0;i<maxPredictions;i++){
+        labelContainer.appendChild(document.createElement("div"));
+    }
+
+    document.getElementById("status").innerText =
+        "모델 로딩 완료";
+}
+
+async function loop() {
+
+    webcam.update();
+
+    await predict();
+
+    window.requestAnimationFrame(loop);
+}
+
+async function predict() {
+
+    const { pose, posenetOutput } =
+        await model.estimatePose(webcam.canvas);
+
+    const prediction =
+        await model.predict(posenetOutput);
+
+    let bestClass = "";
+    let bestProb = 0;
+
+    for(let i=0;i<maxPredictions;i++){
+
+        const prob = prediction[i].probability;
+
+        labelContainer.childNodes[i].innerHTML =
+            `${prediction[i].className} : ${(prob*100).toFixed(1)}%`;
+
+        if(prob > bestProb){
+            bestProb = prob;
+            bestClass = prediction[i].className;
+        }
+    }
+
+    const result = document.getElementById("result");
+
+    if(bestProb >= THRESHOLD){
+
+        result.innerHTML =
+            `✅ ${bestClass}<br>${(bestProb*100).toFixed(1)}%`;
+
+        result.style.color = "green";
+
+    }else{
+
+        result.innerHTML =
+            `❌ 포즈 인식 실패<br>${(bestProb*100).toFixed(1)}%`;
+
+        result.style.color = "red";
+    }
+
+    drawPose(pose);
+}
+
+function drawPose(pose){
+
+    if(webcam.canvas){
+
+        ctx.drawImage(webcam.canvas,0,0);
+
+        if(pose){
+
+            const minPartConfidence = 0.5;
+
+            tmPose.drawKeypoints(
+                pose.keypoints,
+                minPartConfidence,
+                ctx
+            );
+
+            tmPose.drawSkeleton(
+                pose.keypoints,
+                minPartConfidence,
+                ctx
+            );
+        }
+    }
+}
+
+</script>
+
+</body>
+</html>
